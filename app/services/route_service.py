@@ -104,3 +104,5 @@ def calculate_with_divide_conquer(request: RouteRequest):
             }
         ]
     }
+    
+    
