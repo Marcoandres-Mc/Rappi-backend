@@ -1,7 +1,7 @@
-from app.models.route_request import RouteRequest
+from app.schemas.route import RouteRequest
 
 
-from app.shemas.route import RouteRequest
+from app.schemas.route import RouteRequest
 
 
 def calculate_route(request: RouteRequest):

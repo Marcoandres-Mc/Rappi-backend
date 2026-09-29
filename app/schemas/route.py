@@ -1,5 +1,5 @@
+from typing import List, Optional, Literal
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 class Coordinate(BaseModel):
@@ -10,7 +10,11 @@ class Coordinate(BaseModel):
 class RouteRequest(BaseModel):
     origin: Coordinate
     destination: Coordinate
-    algorithm: str = "backtracking"
+    algorithm: Literal[
+        "brute_force",
+        "backtracking",
+        "divide_conquer"
+    ] = "backtracking"
 
 
 class RouteResponse(BaseModel):
