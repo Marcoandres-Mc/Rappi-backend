@@ -1,4 +1,4 @@
-def divide_conquer(graph, origin, destination):
+def divide_venceras(graph, origin, destination):
     """
     Divide el problema en dos zonas y resuelve
     cada parte de forma independiente.

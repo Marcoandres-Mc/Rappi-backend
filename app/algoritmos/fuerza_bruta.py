@@ -1,7 +1,7 @@
 from itertools import permutations
 
 
-def brute_force(graph, origin, destinations):
+def fuerza_bruta(graph, origin, destinations):
     best_route = None
     best_cost = float("inf")
 
