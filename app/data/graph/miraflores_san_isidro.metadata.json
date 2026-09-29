@@ -1,0 +1,13 @@
+{
+  "source": "OpenStreetMap",
+  "generated_at_utc": "2026-09-29T06:40:02.523703+00:00",
+  "places": [
+    "Miraflores, Lima, Peru",
+    "San Isidro, Lima, Peru"
+  ],
+  "network_type": "drive",
+  "simplified": true,
+  "nodes": 2717,
+  "edges": 5371,
+  "osmnx_version": "2.1.1"
+}

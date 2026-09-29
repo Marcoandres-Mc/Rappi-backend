@@ -1,0 +1,214 @@
+import networkx as nx
+from typing import Any
+
+
+def get_graph_info(graph):
+    """
+    Devuelve información básica del grafo.
+    """
+
+    return {
+        "nodes": graph.number_of_nodes(),
+        "edges": graph.number_of_edges()
+    }
+
+
+def get_node_coordinates(graph, node):
+    """
+    Obtiene las coordenadas de un nodo.
+    """
+
+    data = graph.nodes[node]
+
+    return {
+        "lat": data.get("y"),
+        "lon": data.get("x")
+    }
+
+
+def find_nearest_node(graph, latitude, longitude):
+    """
+    Busca el nodo del grafo más cercano
+    a unas coordenadas.
+    """
+
+    import osmnx as ox
+
+    node = ox.distance.nearest_nodes(
+        graph,
+        X=longitude,
+        Y=latitude
+    )
+
+    return node
+
+
+def get_path_coordinates(
+    graph: nx.MultiDiGraph,
+    path: list[int],
+) -> list[dict[str, float]]:
+    """
+    Expande el camino utilizando la geometría
+    real de cada calle.
+    """
+
+    if not path:
+        return []
+
+    coordinates = [
+        get_node_coordinates(graph, path[0])
+    ]
+
+    for origin, destination in zip(
+        path,
+        path[1:],
+    ):
+        edge_data = get_best_parallel_edge(
+            graph,
+            origin,
+            destination,
+        )
+
+        geometry = edge_data.get("geometry")
+
+        if (
+            geometry is None
+            or not hasattr(geometry, "coords")
+        ):
+            segment = [
+                get_node_coordinates(
+                    graph,
+                    destination,
+                )
+            ]
+
+        else:
+            geometry_coordinates = list(
+                geometry.coords
+            )
+
+            origin_coordinates = (
+                get_node_coordinates(graph, origin)
+            )
+
+            first_lon, first_lat = (
+                geometry_coordinates[0]
+            )
+
+            last_lon, last_lat = (
+                geometry_coordinates[-1]
+            )
+
+            distance_to_first = (
+                (
+                    first_lat
+                    - origin_coordinates["lat"]
+                ) ** 2
+                + (
+                    first_lon
+                    - origin_coordinates["lon"]
+                ) ** 2
+            )
+
+            distance_to_last = (
+                (
+                    last_lat
+                    - origin_coordinates["lat"]
+                ) ** 2
+                + (
+                    last_lon
+                    - origin_coordinates["lon"]
+                ) ** 2
+            )
+
+            if distance_to_last < distance_to_first:
+                geometry_coordinates.reverse()
+
+            segment = [
+                {
+                    "lat": float(lat),
+                    "lon": float(lon),
+                }
+                for lon, lat
+                in geometry_coordinates[1:]
+            ]
+
+        for point in segment:
+            if point != coordinates[-1]:
+                coordinates.append(point)
+
+    return coordinates
+
+
+
+def get_best_parallel_edge(
+    graph: nx.MultiDiGraph,
+    origin: int,
+    destination: int,
+    weight: str = "weight",
+) -> dict[str, Any]:
+    """
+    Selecciona la arista paralela de menor peso.
+    """
+
+    edge_group = graph.get_edge_data(
+        origin,
+        destination,
+    )
+
+    if not edge_group:
+        raise ValueError(
+            "No existe la arista dirigida "
+            f"({origin}, {destination})."
+        )
+
+    try:
+        return min(
+            edge_group.values(),
+            key=lambda data: float(data[weight]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"La arista ({origin}, {destination}) "
+            "no tiene un peso válido."
+        ) from error
+
+
+def get_path_distance_m(
+    graph: nx.MultiDiGraph,
+    path: list[int],
+    weight: str = "weight",
+) -> float:
+    """
+    Calcula la distancia física del camino en metros.
+    """
+
+    total_distance = 0.0
+
+    for origin, destination in zip(
+        path,
+        path[1:],
+    ):
+        edge_data = get_best_parallel_edge(
+            graph,
+            origin,
+            destination,
+            weight,
+        )
+
+        try:
+            distance = (
+                edge_data["distance_m"]
+                if "distance_m" in edge_data
+                else edge_data["length"]
+            )
+
+            total_distance += float(distance)
+
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"La arista ({origin}, {destination}) "
+                "no tiene una distancia válida."
+            ) from error
+
+    return total_distance
