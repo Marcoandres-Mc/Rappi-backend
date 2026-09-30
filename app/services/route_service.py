@@ -1,108 +1,51 @@
-from app.schemas.route import RouteRequest
+from app.schemas.usuario import Usuario
+from app.schemas.repartidor import Repartidor
 
 
-from app.schemas.route import RouteRequest
+# =====================================
+# SERVICIO DE USUARIO
+# =====================================
+
+def crear_usuario(usuario: Usuario):
+
+    return {
+        "mensaje": "Usuario registrado correctamente",
+        "usuario": {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "producto": usuario.producto,
+            "ubicacion_actual": usuario.ubicacion_actual
+        }
+    }
 
 
-def calculate_route(request: RouteRequest):
-    """
-    Coordina el cálculo de una ruta.
+# =====================================
+# SERVICIO DE REPARTIDOR
+# =====================================
 
-    Recibe:
-    - origen
-    - destino
-    - algoritmo
+def calculate_route(repartidor: Repartidor):
 
-    Luego selecciona el algoritmo correspondiente.
-    """
+    ubicacion_inicial = repartidor.ubicacion_inicial
+    algoritmo = repartidor.algoritmo
 
-    algorithm = request.algorithm.lower()
+    if algoritmo == "fuerzaBruta":
 
+        resultado = "Ejecutando Fuerza Bruta"
 
-    if algorithm == "brute_force":
-        return calculate_with_brute_force(request)
+    elif algoritmo == "backtracking":
 
-    elif algorithm == "backtracking":
-        return calculate_with_backtracking(request)
+        resultado = "Ejecutando Backtracking"
 
-    elif algorithm == "divide_conquer":
-        return calculate_with_divide_conquer(request)
+    elif algoritmo == "divideVenceras":
+
+        resultado = "Ejecutando Divide y Vencerás"
 
     else:
-        raise ValueError(
-            f"Algoritmo no soportado: {request.algorithm}"
-        )
 
-
-
-
-
-def calculate_with_brute_force(request: RouteRequest):
-    """
-    Calcula una ruta utilizando Fuerza Bruta.
-    """
+        raise ValueError("Algoritmo no válido")
 
     return {
-        "algorithm": "brute_force",
-        "distance_km": 0,
-        "estimated_time_min": 0,
-        "nodes_explored": 0,
-        "route": [
-            {
-                "lat": request.origin.lat,
-                "lon": request.origin.lon
-            },
-            {
-                "lat": request.destination.lat,
-                "lon": request.destination.lon
-            }
-        ]
+        "ubicacion_inicial": ubicacion_inicial,
+        "algoritmo": algoritmo,
+        "resultado": resultado
     }
-
-
-def calculate_with_backtracking(request: RouteRequest):
-    """
-    Calcula una ruta utilizando Backtracking.
-    """
-
-    return {
-        "algorithm": "backtracking",
-        "distance_km": 0,
-        "estimated_time_min": 0,
-        "nodes_explored": 0,
-        "route": [
-            {
-                "lat": request.origin.lat,
-                "lon": request.origin.lon
-            },
-            {
-                "lat": request.destination.lat,
-                "lon": request.destination.lon
-            }
-        ]
-    }
-
-
-def calculate_with_divide_conquer(request: RouteRequest):
-    """
-    Calcula una ruta utilizando Divide y Vencerás.
-    """
-
-    return {
-        "algorithm": "divide_conquer",
-        "distance_km": 0,
-        "estimated_time_min": 0,
-        "nodes_explored": 0,
-        "route": [
-            {
-                "lat": request.origin.lat,
-                "lon": request.origin.lon
-            },
-            {
-                "lat": request.destination.lat,
-                "lon": request.destination.lon
-            }
-        ]
-    }
-    
-    

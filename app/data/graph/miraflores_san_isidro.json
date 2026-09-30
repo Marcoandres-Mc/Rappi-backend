@@ -1,0 +1,25 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "lat": -12.1219,
+      "lon": -77.0297,
+      "distrito": "Miraflores"
+    },
+    {
+      "id": 2,
+      "lat": -12.1208,
+      "lon": -77.0301,
+      "distrito": "Miraflores"
+    }
+  ],
+  "edges": [
+    {
+      "source": 1,
+      "target": 2,
+      "distancia_m": 150.5,
+      "tiempo_min": 1.8,
+      "trafico": 0.7
+    }
+  ]
+}
