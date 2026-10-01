@@ -21,6 +21,8 @@ def load_city_graph(
     Carga desde disco el grafo vial generado con OSMnx.
 
     No descarga datos durante el inicio de la API.
+    Conserva solo el componente fuertemente conectado, de modo que
+    exista camino dirigido entre cualquier par de nodos.
     """
 
     graph_path = Path(path) if path else GRAPH_PATH
@@ -49,6 +51,10 @@ def load_city_graph(
         raise ValueError(
             "El dataset debe representar un grafo dirigido."
         )
+
+    # Filtra nodos inaccesibles (callejones sin salida, tramos
+    # de un solo sentido aislados) antes de validar el tamaño.
+    graph = ox.truncate.largest_component(graph, strongly=True)
 
     node_count = graph.number_of_nodes()
     edge_count = graph.number_of_edges()
