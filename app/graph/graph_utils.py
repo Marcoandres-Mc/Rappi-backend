@@ -1,5 +1,6 @@
 import networkx as nx
 from typing import Any
+from math import cos, radians, sin
 
 
 def get_graph_info(graph):
@@ -26,21 +27,78 @@ def get_node_coordinates(graph, node):
     }
 
 
-def find_nearest_node(graph, latitude, longitude):
+
+def find_nearest_node(
+    graph: nx.MultiDiGraph,
+    latitude: float,
+    longitude: float,
+) -> int:
     """
-    Busca el nodo del grafo más cercano
-    a unas coordenadas.
+    Encuentra el nodo geográficamente más cercano
+    mediante la fórmula de Haversine.
+
+    Complejidad temporal: O(V).
+    Complejidad espacial: O(1).
     """
 
-    import osmnx as ox
+    if not -90 <= latitude <= 90:
+        raise ValueError(
+            "La latitud debe estar entre -90 y 90."
+        )
 
-    node = ox.distance.nearest_nodes(
-        graph,
-        X=longitude,
-        Y=latitude
-    )
+    if not -180 <= longitude <= 180:
+        raise ValueError(
+            "La longitud debe estar entre -180 y 180."
+        )
 
-    return node
+    target_latitude = radians(latitude)
+    target_longitude = radians(longitude)
+
+    nearest_node = None
+    minimum_distance = float("inf")
+
+    for node, data in graph.nodes(data=True):
+        try:
+            node_latitude = radians(
+                float(data["y"])
+            )
+            node_longitude = radians(
+                float(data["x"])
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        latitude_difference = (
+            node_latitude - target_latitude
+        )
+
+        longitude_difference = (
+            node_longitude - target_longitude
+        )
+
+        haversine_value = (
+            sin(latitude_difference / 2) ** 2
+            + cos(target_latitude)
+            * cos(node_latitude)
+            * sin(longitude_difference / 2) ** 2
+        )
+
+        if haversine_value < minimum_distance:
+            minimum_distance = haversine_value
+            nearest_node = node
+
+    if nearest_node is None:
+        raise ValueError(
+            "El grafo no contiene nodos con "
+            "coordenadas válidas."
+        )
+
+    return int(nearest_node)
+
+
+
+
+
 
 
 def get_path_coordinates(

@@ -1,7 +1,18 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.route import RouteRequest, RouteResponse
 from app.services.route_service import calculate_route
+
+
+from app.schemas.route import (
+    DeliveryRouteRequest,
+    DeliveryRouteResponse,
+    RouteRequest,
+    RouteResponse,
+)
+
+from app.services.delivery_service import (
+    calculate_delivery_route,
+)
 
 router = APIRouter(
     prefix="/routes",
@@ -28,3 +39,30 @@ def calculate_route_endpoint(request: RouteRequest):
         return calculate_route(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+
+@router.post(
+    "/deliveries",
+    response_model=DeliveryRouteResponse,
+)
+def calculate_deliveries_endpoint(
+    request: DeliveryRouteRequest,
+):
+    try:
+        return calculate_delivery_route(request)
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Error interno al optimizar "
+                "las entregas"
+            ),
+        ) from error
