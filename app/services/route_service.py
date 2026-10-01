@@ -29,6 +29,19 @@ def get_base_graph() -> nx.MultiDiGraph:
     return load_city_graph()
 
 
+@lru_cache(maxsize=24)
+def get_prepared_graph(hour: int):
+    """
+    Devuelve (graph, adjacency) para una hora dada.
+    Se calcula una sola vez por hora y se reutiliza.
+    """
+    graph = prepare_graph(get_base_graph(), hour)
+    adjacency = build_adjacency_list(graph)
+    return graph, adjacency
+
+
+
+
 def calculate_route(
     request: RouteRequest,
 ) -> RouteResponse:
@@ -38,12 +51,9 @@ def calculate_route(
             "todavía no está disponible."
         )
 
-    graph = prepare_graph(
-        get_base_graph(),
-        request.traffic_hour,
+    graph, adjacency = get_prepared_graph(
+    request.traffic_hour
     )
-
-    adjacency = build_adjacency_list(graph)
 
     origin_node = find_nearest_node(
         graph,

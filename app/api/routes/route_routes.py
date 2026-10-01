@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException
 
 from app.services.route_service import calculate_route
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 from app.schemas.route import (
     DeliveryRouteRequest,

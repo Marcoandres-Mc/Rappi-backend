@@ -1,6 +1,5 @@
 import networkx as nx
 
-
 def get_traffic_factor(hour: int) -> float:
     if not 0 <= hour <= 23:
         raise ValueError(
@@ -44,10 +43,11 @@ def prepare_graph(
             raise ValueError(
                 "Las distancias no pueden ser negativas."
             )
-
+            
+        edge_factor = get_edge_factor(factor, data)
         data["distance_m"] = distance_m
-        data["traffic_factor"] = factor
-        data["weight"] = distance_m * factor
+        data["traffic_factor"] = edge_factor
+        data["weight"] = distance_m * edge_factor
 
     return prepared_graph
 
@@ -79,3 +79,25 @@ def build_adjacency_list(
             )
 
     return adjacency
+
+
+
+
+def _highway_type(data: dict) -> str:
+    h = data.get("highway", "residential")
+    return h[0] if isinstance(h, list) else h
+
+
+# Qué tan sensible es cada tipo de vía a la congestión (1.0 = nada)
+ROAD_SENSITIVITY = {
+    "trunk": 1.0, "primary": 1.0,
+    "secondary": 0.7, "tertiary": 0.5,
+}
+DEFAULT_SENSITIVITY = 0.2  # residential, service, etc.
+
+
+def get_edge_factor(base_factor: float, data: dict) -> float:
+    sensitivity = ROAD_SENSITIVITY.get(
+        _highway_type(data), DEFAULT_SENSITIVITY
+    )
+    return 1.0 + (base_factor - 1.0) * sensitivity

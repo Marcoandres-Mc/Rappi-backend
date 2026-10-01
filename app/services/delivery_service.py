@@ -4,10 +4,7 @@ from app.algoritmos.backtracking import backtracking
 from app.algoritmos.divide_venceras import divide_venceras
 from app.algoritmos.fuerza_bruta import fuerza_bruta
 
-from app.graph.graph_builder import (
-    build_adjacency_list,
-    prepare_graph,
-)
+
 
 from app.graph.graph_utils import (
     find_nearest_node,
@@ -24,7 +21,7 @@ from app.services.cost_matrix_service import (
     build_cost_matrix,
 )
 
-from app.services.route_service import get_base_graph
+from app.services.route_service import get_prepared_graph
 
 
 ALGORITHM_LIMITS = {
@@ -42,12 +39,9 @@ def calculate_delivery_route(
         len(request.destinations),
     )
 
-    graph = prepare_graph(
-        get_base_graph(),
-        request.traffic_hour,
+    graph, adjacency = get_prepared_graph(
+    request.traffic_hour
     )
-
-    adjacency = build_adjacency_list(graph)
 
     requested_coordinates = [
         request.origin,

@@ -115,3 +115,60 @@ def reconstruct_path(
 
     path.reverse()
     return path
+
+
+
+
+
+def dijkstra_to_targets(
+    adjacency: AdjacencyList,
+    origin: int,
+    targets: set[int],
+) -> tuple[dict[int, ShortestPathResult], int]:
+    """
+    Un solo Dijkstra desde `origin` que se detiene cuando
+    ya encontró el camino a todos los `targets`.
+
+    Devuelve (resultados por destino, nodos visitados).
+    """
+    if origin not in adjacency:
+        raise ValueError(
+            f"El nodo de origen no existe: {origin}"
+        )
+
+    distances = {node: inf for node in adjacency}
+    previous: dict[int, int] = {}
+    visited: set[int] = set()
+    pending = set(targets)
+    results: dict[int, ShortestPathResult] = {}
+
+    distances[origin] = 0.0
+    queue: list[tuple[float, int]] = [(0.0, origin)]
+
+    while queue and pending:
+        cost, current = heappop(queue)
+
+        if current in visited:
+            continue
+
+        visited.add(current)
+
+        if current in pending:
+            pending.remove(current)
+            results[current] = ShortestPathResult(
+                path=reconstruct_path(
+                    previous, origin, current
+                ),
+                total_cost=cost,
+                nodes_visited=len(visited),
+            )
+
+        for neighbor, edge_cost in adjacency[current]:
+            candidate = cost + edge_cost
+
+            if candidate < distances[neighbor]:
+                distances[neighbor] = candidate
+                previous[neighbor] = current
+                heappush(queue, (candidate, neighbor))
+
+    return results, len(visited)

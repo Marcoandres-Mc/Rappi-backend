@@ -37,12 +37,16 @@ assert result.distancia_total_m > 0
 assert result.weighted_cost > 0
 assert len(result.path) >= 2
 
-# A las 08:00 el factor configurado es 2.5.
-assert isclose(
-    result.weighted_cost,
-    result.distancia_total_m * 2.5,
-    rel_tol=1e-6,
+# Con factor por tipo de vía, el costo debe estar entre
+# la distancia real (factor 1.0) y distancia * 2.5 (máximo).
+assert (
+    result.distancia_total_m
+    <= result.weighted_cost
+    <= result.distancia_total_m * 2.5
 )
 
 print("\nTODAS LAS VALIDACIONES PASARON")
 print("Dijkstra funciona correctamente.")
+
+
+

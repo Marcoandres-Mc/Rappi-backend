@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from app.algoritmos.dijkstra import (
     PathNotFoundError,
-    dijkstra,
+    dijkstra_to_targets,
 )
 
 AdjacencyList = dict[
@@ -24,79 +24,54 @@ def build_cost_matrix(
     nodes: list[int],
 ) -> CostMatrixResult:
     """
-    Calcula los costos y caminos mínimos dirigidos
-    entre todos los puntos importantes.
+    Calcula los costos y caminos mínimos dirigidos entre
+    todos los puntos importantes, con un Dijkstra por origen.
     """
 
     if not nodes:
-        raise ValueError(
-            "Se requiere al menos un nodo."
-        )
+        raise ValueError("Se requiere al menos un nodo.")
 
     if len(nodes) != len(set(nodes)):
         raise ValueError(
-            "Los nodos de la matriz no pueden "
-            "estar repetidos."
+            "Los nodos de la matriz no pueden estar repetidos."
         )
 
     size = len(nodes)
 
-    costs = [
-        [0.0] * size
-        for _ in range(size)
-    ]
-
-    paths = [
-        [
-            []
-            for _ in range(size)
-        ]
-        for _ in range(size)
-    ]
+    costs = [[0.0] * size for _ in range(size)]
+    paths = [[[] for _ in range(size)] for _ in range(size)]
 
     total_nodes_visited = 0
 
-    for origin_index, origin in enumerate(nodes):
+    for i, origin in enumerate(nodes):
         if origin not in adjacency:
-            raise ValueError(
-                f"El nodo no existe: {origin}"
-            )
+            raise ValueError(f"El nodo no existe: {origin}")
 
-        paths[origin_index][origin_index] = [
-            origin
-        ]
+        paths[i][i] = [origin]
 
-        for destination_index, destination in enumerate(
-            nodes
-        ):
-            if origin_index == destination_index:
+        targets = {n for n in nodes if n != origin}
+
+        results, visited = dijkstra_to_targets(
+            adjacency,
+            origin,
+            targets,
+        )
+
+        total_nodes_visited += visited
+
+        for j, destination in enumerate(nodes):
+            if i == j:
                 continue
 
-            try:
-                result = dijkstra(
-                    adjacency,
-                    origin,
-                    destination,
-                )
-
-            except PathNotFoundError as error:
+            if destination not in results:
                 raise PathNotFoundError(
                     "No se puede construir la matriz: "
                     "no existe camino dirigido entre "
                     f"{origin} y {destination}."
-                ) from error
+                )
 
-            costs[origin_index][destination_index] = (
-                result.total_cost
-            )
-
-            paths[origin_index][destination_index] = (
-                result.path
-            )
-
-            total_nodes_visited += (
-                result.nodes_visited
-            )
+            costs[i][j] = results[destination].total_cost
+            paths[i][j] = results[destination].path
 
     return CostMatrixResult(
         nodes=nodes.copy(),
