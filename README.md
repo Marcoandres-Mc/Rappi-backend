@@ -1,23 +1,48 @@
-# Rappi – Optimización de Rutas · Documentación del Backend
+# 🛵 Rappi – Optimización de Rutas de Reparto (Backend)
 
-Backend en **FastAPI** que modela la red vial de **Miraflores y San Isidro (Lima)** como un grafo dirigido y calcula rutas de reparto con Dijkstra, fuerza bruta, backtracking y divide y vencerás.
+Proyecto del curso de **Complejidad Algorítmica**. API en **FastAPI** que modela la red vial de **Miraflores y San Isidro (Lima)** como un grafo dirigido con tráfico dependiente de la hora y resuelve rutas de reparto con distintos algoritmos.
+
+| Algoritmo | Uso | Óptimo | Máx. entregas | Complejidad |
+|---|---|---|---|---|
+| Dijkstra | Ruta punto a punto | Sí | — | O((V+E) log V) |
+| Fuerza bruta | Orden de entregas (TSP) | Sí | 8 | O(N!) |
+| Backtracking con poda | Orden de entregas (TSP) | Sí | 12 | O(N!) peor caso |
+| Divide y vencerás | Orden de entregas (TSP) | **No** (heurística) | 30 | ≈ O(N log N) |
+
+> Documentación técnica detallada del backend: [`BACKEND_DOCS.md`](./BACKEND_DOCS.md)
 
 ---
 
-## 1. Puesta en marcha
+## Estado del proyecto
+
+- ✅ **Backend listo para el parcial**: 4 algoritmos, 103 tests en verde.
+- 🔜 **Frontend**: pendiente. Este README tiene todo lo necesario para empezar (secciones 3 a 8).
+- 🔜 Futuro: UFDS (conectividad) y Held-Karp (programación dinámica).
+
+---
+
+## 1. Instalación y ejecución
 
 ```bash
+git clone https://github.com/Marcoandres-Mc/Rappi-backend.git
+cd Rappi-backend
+
 python -m venv .venv
-.venv\Scripts\activate            # Windows
+.venv\Scripts\activate            # Windows  (Linux/Mac: source .venv/bin/activate)
 pip install -r requirements.txt
+
 uvicorn app.main:app --reload     # http://localhost:8000
 ```
 
-- Documentación interactiva (Swagger): `http://localhost:8000/docs`
-- CORS permitido solo para `http://localhost:3000` y `http://127.0.0.1:3000` (editar en `app/main.py` al desplegar el frontend).
-- El grafo se carga **desde disco** (`app/data/graph/miraflores_san_isidro.graphml`); no se descarga nada al iniciar.
+- Swagger (probar endpoints sin escribir código): **http://localhost:8000/docs**
+- El grafo se carga desde disco al recibir la primera petición (tarda un par de segundos); no se descarga nada de internet.
 
-> ⚠️ Pendiente: `requirements.txt` está codificado en UTF-16 y `pip install -r` puede fallar. Re-guardarlo en UTF-8 (`pip freeze` desde CMD, no PowerShell).
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -v
+```
 
 ---
 
@@ -27,355 +52,49 @@ uvicorn app.main:app --reload     # http://localhost:8000
 |---|---|
 | Fuente | OpenStreetMap vía OSMnx 2.1.1 |
 | Zona | Miraflores y San Isidro, Lima, Perú |
-| Tipo de red | `drive`, simplificada |
-| Nodos | **2717** |
-| Aristas | **5371** |
-| Tipo | `MultiDiGraph` dirigido (respeta calles de un solo sentido) |
+| Archivo original | 2717 nodos, 5371 aristas |
+| **Grafo usado (tras filtrar al componente fuertemente conectado)** | **2633 nodos, 5232 aristas** |
+| Tipo | Dirigido (respeta calles de un solo sentido) |
+| Peso de arista | `distancia_m × factor_de_tráfico` |
 
-Cada nodo es una intersección con `x` (longitud) e `y` (latitud). Cada arista tiene `length` (metros), `highway` (tipo de vía) y otros atributos de OSM.
+El filtro elimina 84 nodos inaccesibles (callejones y tramos aislados) para garantizar que exista camino entre cualquier par de puntos.
 
-> Nota para el informe: el texto original del enunciado menciona 1580 nodos y 3420 aristas; los valores reales del dataset son los de la tabla.
-
----
-
-## 3. Arquitectura
+**Límites del mapa** (para centrar y restringir el mapa del frontend):
 
 ```
-app/
-├── main.py                      # App FastAPI, CORS, /, /health
-├── core/config.py               # Settings (hoy sin uso activo)
-├── api/routes/route_routes.py   # Endpoints /routes/*
-├── schemas/
-│   ├── route.py                 # Modelos Pydantic de request/response (los que usa la API)
-│   ├── grafo.py                 # Modelos de nodo/arista/grafo (sin uso en endpoints)
-│   ├── pedido.py, repartidor.py, usuario.py   # Stubs para futuro
-├── services/
-│   ├── route_service.py         # Ruta punto a punto + caché del grafo
-│   ├── delivery_service.py      # Orquesta el problema de entregas (TSP)
-│   ├── cost_matrix_service.py   # Matriz de costos NxN con Dijkstra
-│   └── pedido_service.py        # Stub
-├── algoritmos/
-│   ├── dijkstra.py              # dijkstra() y dijkstra_to_targets()
-│   ├── fuerza_bruta.py          # TSP exacto por permutaciones
-│   ├── backtracking.py          # TSP exacto con poda
-│   └── divide_venceras.py       # TSP aproximado por partición geográfica
-├── graph/
-│   ├── graph_loader.py          # Carga y valida el GraphML
-│   ├── graph_builder.py         # Pesos con tráfico + lista de adyacencia
-│   └── graph_utils.py           # Nodo más cercano, coordenadas, distancia de ruta
-└── data/graph/                  # Dataset (.graphml)
-scripts/                         # Scripts de verificación (ver sección 8)
-```
-
-### Flujo de una petición de entregas
-
-```
-Request ─► validar límite por algoritmo
-       ─► get_prepared_graph(hora)           (grafo con pesos, en caché por hora)
-       ─► find_nearest_node por cada punto   (Haversine, O(V))
-       ─► build_cost_matrix                  (1 Dijkstra por origen → matriz NxN)
-       ─► algoritmo TSP sobre la matriz      (fuerza bruta / backtracking / D&C)
-       ─► reconstruir camino completo        (concatena caminos mínimos entre paradas)
-       ─► Response (métricas + path lat/lon)
+Latitud:   -12.1375  a  -12.0853
+Longitud:  -77.0605  a  -77.0015
+Centro:    lat -12.1099, lon -77.0315   (zoom inicial recomendado: 14)
 ```
 
 ---
 
-## 4. Modelo de costos y tráfico
+## 3. 🎯 Guía para el encargado del frontend
 
-Cada arista tiene `weight = distancia_m × factor_arista`.
+### 3.1 Antes de empezar (importante)
 
-**Factor base por hora** (`get_traffic_factor`):
+1. **CORS**: el backend solo acepta peticiones desde `http://localhost:3000` y `http://127.0.0.1:3000`.
+   - Con **Next.js / Create React App** el puerto por defecto ya es 3000. ✅
+   - Con **Vite** el puerto por defecto es 5173 y **las peticiones serán bloqueadas**. Soluciones: arrancar con `npm run dev -- --port 3000`, o agregar `"http://localhost:5173"` a `allow_origins` en `app/main.py`.
+2. Levanta el backend (sección 1) y confirma que `http://localhost:8000/health` devuelve `{"status":"ok"}`.
+3. Prueba los endpoints desde `/docs` antes de programar para ver respuestas reales.
 
-| Franja | Factor base |
-|---|---|
-| 07:00–09:59 y 17:00–19:59 (hora punta) | 2.5 |
-| 10:00–16:59 y 20:00–21:59 | 1.5 |
-| Resto (madrugada/noche) | 1.0 |
+### 3.2 Stack sugerido
 
-**Factor por arista** (`get_edge_factor`): depende del tipo de vía (`highway`):
+- **React o Next.js** (puerto 3000).
+- **react-leaflet** + tiles de OpenStreetMap (no requiere API key):
+  `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
+- Gráficos opcionales para el comparador: `recharts`.
 
-```
-factor_arista = 1 + (factor_base − 1) × sensibilidad
-```
+### 3.3 Boceto de la interfaz
 
-| Tipo de vía | Sensibilidad |
-|---|---|
-| `trunk`, `primary` | 1.0 |
-| `secondary` | 0.7 |
-| `tertiary` | 0.5 |
-| Otras (residential, service…) | 0.2 |
-
-Así, en hora punta una avenida cuesta ×2.5 pero una calle residencial solo ×1.3, y Dijkstra puede elegir rutas distintas según la hora.
-
-Consecuencias para el frontend:
-- `distancia_total_m` es la distancia **real** en metros del recorrido.
-- `weighted_cost` es el costo **con tráfico** (unidades ≈ "metros equivalentes"); siempre cumple `distancia ≤ weighted_cost ≤ distancia × 2.5`.
-
----
-
-## 5. Endpoints
-
-Base URL: `http://localhost:8000`
-
-### 5.1 `GET /`
-```json
-{ "message": "Backend conectado y funcionando" }
-```
-
-### 5.2 `GET /health`
-```json
-{ "status": "ok" }
-```
-
-### 5.3 `GET /routes/`
-Verifica que el módulo funciona y lista los algoritmos disponibles con sus límites. El frontend puede leer este endpoint para llenar el selector de algoritmos.
-
-**Response 200**
-```json
-{
-  "message": "Módulo de rutas funcionando",
-  "algorithms": {
-    "direct_route": ["dijkstra"],
-    "deliveries": [
-      { "name": "brute_force",    "max_deliveries": 8,  "optimal": true  },
-      { "name": "backtracking",   "max_deliveries": 12, "optimal": true  },
-      { "name": "divide_conquer", "max_deliveries": 30, "optimal": false }
-    ]
-  }
-}
-```
-
-| Campo | Significado |
-|---|---|
-| `direct_route` | Algoritmos válidos para `POST /routes/calculate` |
-| `deliveries` | Algoritmos válidos para `POST /routes/deliveries`, con su máximo de entregas y si garantizan el óptimo |
-
-### 5.4 `POST /routes/calculate` — ruta punto a punto
-
-**Request**
-```json
-{
-  "origin":      { "lat": -12.1219, "lon": -77.0297 },
-  "destination": { "lat": -12.0925, "lon": -77.0365 },
-  "algorithm": "dijkstra",
-  "traffic_hour": 8
-}
-```
-
-| Campo | Tipo | Reglas |
-|---|---|---|
-| `origin`, `destination` | `{lat, lon}` | lat ∈ [-90, 90], lon ∈ [-180, 180]. Se ajustan al nodo vial más cercano |
-| `algorithm` | string | Valor por defecto `"dijkstra"`. **Solo `dijkstra` está implementado aquí**; los demás valores (`brute_force`, `backtracking`, `divide_conquer`) devuelven 400 |
-| `traffic_hour` | int | 0–23, por defecto 12 |
-
-**Response 200**
-```json
-{
-  "algorithm": "dijkstra",
-  "execution_time_ms": 3.33,
-  "nodos_visitados": 2128,
-  "distancia_total_m": 4484.76,
-  "weighted_cost": 7118.80,
-  "path": [ { "lat": -12.1223648, "lon": -77.0290937 }, "..." ]
-}
-```
-
-| Campo | Significado |
-|---|---|
-| `execution_time_ms` | Tiempo solo de Dijkstra (sin preparar grafo) |
-| `nodos_visitados` | Nodos extraídos de la cola de prioridad (medida de esfuerzo) |
-| `distancia_total_m` | Metros reales del camino |
-| `weighted_cost` | Costo con tráfico |
-| `path` | Polilínea ordenada lista para dibujar en el mapa |
-
-### 5.5 `POST /routes/deliveries` — múltiples entregas (TSP)
-
-**Request**
-```json
-{
-  "origin": { "lat": -12.1219, "lon": -77.0297 },
-  "destinations": [
-    { "lat": -12.0925, "lon": -77.0365 },
-    { "lat": -12.1328, "lon": -77.0225 },
-    { "lat": -12.1317, "lon": -77.0307 }
-  ],
-  "algorithm": "backtracking",
-  "traffic_hour": 8,
-  "return_to_origin": false
-}
-```
-
-| Campo | Tipo | Reglas |
-|---|---|---|
-| `origin` | `{lat, lon}` | Depósito / punto de partida |
-| `destinations` | lista | 1 a 30 elementos (el límite real depende del algoritmo) |
-| `algorithm` | string | `brute_force` \| `backtracking` \| `divide_conquer` (**obligatorio**) |
-| `traffic_hour` | int | 0–23, por defecto 12 |
-| `return_to_origin` | bool | Si `true`, la ruta termina volviendo al depósito. Por defecto `false` |
-
-**Límites por algoritmo**
-
-| Algoritmo | Máx. entregas | Óptimo | Complejidad |
-|---|---|---|---|
-| `brute_force` | **8** | Sí | O(N!) |
-| `backtracking` | **12** | Sí | O(N!) en el peor caso, con poda (cota greedy inicial) |
-| `divide_conquer` | **30** | **No** (heurística) | ≈ O(N log N) + permutaciones de grupos de ≤3 |
-
-La matriz de costos se construye con N+1 corridas de Dijkstra (una por punto), y cada algoritmo trabaja sobre esa matriz.
-
-**Response 200**
-```json
-{
-  "algorithm": "backtracking",
-  "execution_time_ms": 0.05,
-  "matrix_time_ms": 41.2,
-  "nodos_visitados": 8757,
-  "states_explored": 9,
-  "branches_pruned": 5,
-  "distancia_total_m": 9120.4,
-  "weighted_cost": 13401.35,
-  "delivery_order": [0, 2, 3, 1],
-  "is_optimal": true,
-  "path": [ { "lat": -12.12, "lon": -77.03 }, "..." ]
-}
-```
-
-| Campo | Significado |
-|---|---|
-| `execution_time_ms` | Tiempo **solo del algoritmo TSP** (sin la matriz) |
-| `matrix_time_ms` | Tiempo de construir la matriz con Dijkstra |
-| `nodos_visitados` | Suma de nodos explorados por todas las corridas de Dijkstra de la matriz |
-| `states_explored` | Estados/permutaciones evaluados por el algoritmo TSP |
-| `branches_pruned` | Ramas descartadas por poda (solo `backtracking`; en los demás es 0) |
-| `weighted_cost` | Costo total con tráfico del orden elegido |
-| `delivery_order` | **Índices** de visita: `0` = origen, `1..N` = destinos en el orden en que se enviaron. Ej.: `[0, 2, 3, 1]` = origen → destino 2 → destino 3 → destino 1. Con `return_to_origin=true` termina en `0` |
-| `is_optimal` | `true` para fuerza bruta y backtracking, `false` para divide y vencerás |
-| `path` | Polilínea completa del recorrido (concatena los caminos mínimos entre paradas) |
-
-> Para numerar marcadores en el mapa: el marcador del destino `k` (1-indexado según el request) recibe el número `posición de k dentro de delivery_order`.
-
-### 5.6 Errores
-
-| Código | Cuándo | Cuerpo |
-|---|---|---|
-| 400 | Algoritmo no disponible en `/calculate`; excede el límite de entregas; dos puntos caen en el mismo nodo vial; no existe camino dirigido entre dos puntos; hora/coordenada inválida | `{"detail": "mensaje en español"}` |
-| 422 | Validación de Pydantic (campo faltante, tipo incorrecto, rango, `algorithm` inválido, `destinations` vacía o > 30) | Formato estándar de FastAPI |
-| 500 | Error inesperado. En `/routes/calculate`: `"Error interno al calcular la ruta"`. En `/routes/deliveries`: `"Error interno al optimizar las entregas"` | `{"detail": "..."}` (el traceback completo queda en el log del servidor con `logger.exception`) |
-
-Mensajes de ejemplo del 400:
-- `"'brute_force' admite como máximo 8 entregas; se recibieron 9."`
-- `"Dos o más ubicaciones corresponden al mismo nodo vial."`
-- `"El algoritmo 'backtracking' todavía no está disponible."` (en `/calculate`)
-
----
-
-## 6. Detalle de los algoritmos
-
-### Dijkstra (`algoritmos/dijkstra.py`)
-- Lista de adyacencia `dict[nodo, list[(vecino, peso)]]` y cola de prioridad con `heapq`.
-- `dijkstra(adj, origen, destino)`: se detiene al llegar al destino. Devuelve `ShortestPathResult(path, total_cost, nodes_visited)`. Lanza `PathNotFoundError` (subclase de `ValueError`) si no hay camino dirigido.
-- `dijkstra_to_targets(adj, origen, targets)`: una sola corrida que se detiene cuando alcanzó **todos** los destinos pedidos; usada para la matriz.
-- Complejidad: O((V + E) log V). Rechaza pesos negativos.
-
-### Fuerza bruta (`algoritmos/fuerza_bruta.py`)
-- Prueba todas las permutaciones de los destinos (el índice 0 es el depósito).
-- Complejidad O(N!·N). `states_explored` = N! permutaciones.
-
-### Backtracking (`algoritmos/backtracking.py`)
-- Búsqueda recursiva con **poda**: se descarta cualquier rama cuyo costo parcial ya iguale o supere la mejor solución conocida.
-- Cota superior inicial con heurística greedy (vecino más cercano).
-- Explora primero los candidatos más cercanos.
-- Siempre encuentra el mismo costo óptimo que fuerza bruta, con menos estados.
-
-### Divide y vencerás (`algoritmos/divide_venceras.py`)
-- Divide los destinos por el eje (latitud o longitud) de mayor extensión, a la mitad.
-- Caso base: grupos de ≤3 puntos se resuelven por permutaciones.
-- Combina probando ambos órdenes de grupos y ambas orientaciones internas.
-- **Heurística**: no garantiza el óptimo (`is_optimal=false`). Con pocos puntos suele coincidir con el óptimo; la diferencia aparece con N grande.
-
-### Matriz de costos (`services/cost_matrix_service.py`)
-- `build_cost_matrix(adjacency, nodes)` → `CostMatrixResult(nodes, costs, paths, nodes_visited)`.
-- `costs[i][j]` = costo mínimo dirigido de `nodes[i]` a `nodes[j]`. **Es asimétrica** (calles de un solo sentido).
-- `paths[i][j]` = lista de ids de nodos del camino.
-
----
-
-## 7. Caché y rendimiento
-
-- `get_base_graph()` (`lru_cache`): carga el GraphML una sola vez.
-- `get_prepared_graph(hora)` (`lru_cache`, 24 entradas): devuelve `(grafo con pesos, lista de adyacencia)` para cada hora. **No modificar el grafo devuelto**: es compartido entre peticiones.
-- `find_nearest_node` recorre todos los nodos (O(V)); suficiente para este tamaño.
-- Referencia medida: Dijkstra punto a punto ≈ 3 ms sobre 2717 nodos.
-
----
-
-## 8. Scripts de verificación
-
-Ejecutar desde la raíz del proyecto con el venv activo:
-
-| Comando | Qué valida |
-|---|---|
-| `python -m scripts.verificar_dijkstra` | Dijkstra punto a punto y que `distancia ≤ costo ≤ distancia×2.5` |
-| `python -m scripts.verificar_matriz` | Matriz 4×4, y compara fuerza bruta vs backtracking vs D&C |
-| `python -m scripts.verificar_equivalencia` | La matriz coincide con Dijkstra punto a punto |
-
-Puntos de prueba usados en los scripts:
-
-| Nombre | lat | lon |
-|---|---|---|
-| Depósito Miraflores | -12.1219 | -77.0297 |
-| Entrega San Isidro | -12.0925 | -77.0365 |
-| Entrega Reducto | -12.1328 | -77.0225 |
-| Entrega Larcomar | -12.1317 | -77.0307 |
-
-Resultado esperado con estos 4 puntos (hora 8, sin volver al origen): orden `[0, 2, 3, 1]`, costo ≈ 13401.35, idéntico en los tres algoritmos.
-
----
-
-## 9. Guía para el frontend
-
-### Ejemplo con `fetch`
-```js
-const API = "http://localhost:8000";
-
-export async function calcularEntregas(payload) {
-  const res = await fetch(`${API}/routes/deliveries`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(
-      typeof err.detail === "string" ? err.detail : "Datos inválidos"
-    );
-  }
-  return res.json();
-}
-```
-
-### Reglas que la interfaz debe aplicar
-1. Modo **Ruta directa** → `/routes/calculate` con `algorithm: "dijkstra"`.
-2. Modo **Entregas** → `/routes/deliveries` con uno de los 3 algoritmos.
-3. Limitar el botón "Agregar destino" según el algoritmo: **8 / 12 / 30**.
-4. Enviar `traffic_hour` como entero 0–23 (convertir "08:00" → `8`).
-5. Dibujar `path` como polilínea; numerar las paradas según `delivery_order`.
-6. Mostrar siempre: `execution_time_ms`, `matrix_time_ms`, `states_explored`, `branches_pruned`, `distancia_total_m`, `weighted_cost`, `is_optimal`.
-7. Mostrar `detail` de los errores 400 tal cual (ya vienen en español).
-8. Si dos destinos están muy cerca pueden caer en el mismo nodo vial → error 400; avisar al usuario.
-
-### Modo "Comparar algoritmos"
-Ejecutar las 3 peticiones con el mismo payload (cambiando solo `algorithm`) y mostrar tabla: tiempo, estados, ramas podadas, costo, óptimo. Si hay más de 8 destinos, omitir `brute_force`.
-
-### Boceto de la interfaz
 ```
 ┌──────────────────────┬───────────────────────────────────────────┐
 │ 🛵 OPTIMIZADOR       │                                           │
 │ Miraflores/San Isidro│                                           │
 ├──────────────────────┤                                           │
 │ TIPO DE RECORRIDO    │                                           │
-│ (•) Entregas ( ) Dir.│                MAPA (Leaflet + OSM)       │
+│ (•) Entregas ( ) Dir.│            MAPA (Leaflet + OSM)           │
 ├──────────────────────┤        marcadores numerados + ruta        │
 │ ORIGEN               │                                           │
 │ [Seleccionar ▼] o clic en mapa                                   │
@@ -386,7 +105,7 @@ Ejecutar las 3 peticiones con el mismo payload (cambiando solo `algorithm`) y mo
 │ [x] Volver al origen │                                           │
 ├──────────────────────┤                                           │
 │ HORA DE SALIDA [08:00▼]                                          │
-│ ALGORITMO                                                        │
+│ ALGORITMO            │                                           │
 │ (•) Fuerza bruta (≤8)│                                           │
 │ ( ) Backtracking (≤12)                                           │
 │ ( ) Divide y vencerás (≤30)                                      │
@@ -398,13 +117,271 @@ Ejecutar las 3 peticiones con el mismo payload (cambiando solo `algorithm`) y mo
 └──────────────────────┴───────────────────────────────────────────┘
 ```
 
+**Modo "Ruta directa"**: oculta destinos múltiples y "Volver al origen"; muestra un único destino y usa Dijkstra.
+
+### 3.4 Reglas de la interfaz
+
+| # | Regla |
+|---|---|
+| 1 | Modo **Ruta directa** → `POST /routes/calculate` con `algorithm: "dijkstra"`. |
+| 2 | Modo **Entregas** → `POST /routes/deliveries` con `brute_force`, `backtracking` o `divide_conquer`. |
+| 3 | El botón "+ Agregar destino" se deshabilita al llegar al límite: **8 / 12 / 30** según el algoritmo. Si el usuario cambia de algoritmo con más destinos que el nuevo límite, avisar o recortar. |
+| 4 | Convertir la hora `"08:00"` a entero `8` para `traffic_hour` (0–23). |
+| 5 | Origen y destinos se eligen **haciendo clic en el mapa** o desde la lista de lugares de ejemplo (3.8). Se envían como `{lat, lon}`. |
+| 6 | Dibujar `path` como `Polyline`. Numerar los marcadores con `delivery_order` (3.6). |
+| 7 | Mostrar el mensaje `detail` de los errores 400 tal cual (ya viene en español). |
+| 8 | Mostrar un indicador de carga mientras se espera la respuesta (la primera petición es más lenta). |
+| 9 | Si el algoritmo es `divide_conquer`, mostrar un aviso "solución aproximada" (`is_optimal === false`). |
+| 10 | **Comparar todos**: lanzar las 3 peticiones con el mismo payload y mostrar tabla. Omitir `brute_force` si hay más de 8 destinos. |
+
+### 3.5 Contrato de la API (tipos TypeScript)
+
+```ts
+export interface Coordinate { lat: number; lon: number; }
+
+export type DeliveryAlgorithm = "brute_force" | "backtracking" | "divide_conquer";
+
+// POST /routes/calculate
+export interface RouteRequest {
+  origin: Coordinate;
+  destination: Coordinate;
+  algorithm?: "dijkstra";        // por defecto "dijkstra"
+  traffic_hour?: number;         // 0-23, por defecto 12
+}
+
+export interface RouteResponse {
+  algorithm: string;
+  execution_time_ms: number;
+  nodos_visitados: number;
+  distancia_total_m: number;     // metros reales
+  weighted_cost: number;         // costo con tráfico
+  path: Coordinate[];
+}
+
+// POST /routes/deliveries
+export interface DeliveryRouteRequest {
+  origin: Coordinate;
+  destinations: Coordinate[];    // 1 a 30 (límite real según algoritmo)
+  algorithm: DeliveryAlgorithm;  // obligatorio
+  traffic_hour?: number;         // 0-23, por defecto 12
+  return_to_origin?: boolean;    // por defecto false
+}
+
+export interface DeliveryRouteResponse {
+  algorithm: string;
+  execution_time_ms: number;     // solo el algoritmo TSP
+  matrix_time_ms: number;        // construcción de la matriz con Dijkstra
+  nodos_visitados: number;
+  states_explored: number;
+  branches_pruned: number;       // solo backtracking (0 en los demás)
+  distancia_total_m: number;
+  weighted_cost: number;
+  delivery_order: number[];      // índices: 0 = origen, 1..N = destinos en el orden enviado
+  is_optimal: boolean;
+  path: Coordinate[];
+}
+
+// GET /routes/
+export interface AlgorithmsInfo {
+  message: string;
+  algorithms: {
+    direct_route: string[];
+    deliveries: { name: DeliveryAlgorithm; max_deliveries: number; optimal: boolean }[];
+  };
+}
+```
+
+### 3.6 Cliente de API listo para copiar
+
+```ts
+const API = "http://localhost:8000";
+
+async function post<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API}${url}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    // 400 → detail es string en español; 422 → detail es una lista (validación)
+    const message =
+      typeof err.detail === "string"
+        ? err.detail
+        : "Datos inválidos. Revisa los campos del formulario.";
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export const calcularRuta = (req: RouteRequest) =>
+  post<RouteResponse>("/routes/calculate", req);
+
+export const calcularEntregas = (req: DeliveryRouteRequest) =>
+  post<DeliveryRouteResponse>("/routes/deliveries", req);
+
+export const obtenerAlgoritmos = () =>
+  fetch(`${API}/routes/`).then((r) => r.json() as Promise<AlgorithmsInfo>);
+
+// "08:00" -> 8
+export const horaAEntero = (hhmm: string) => parseInt(hhmm.split(":")[0], 10);
+```
+
+**Numerar los marcadores** con `delivery_order`. Ejemplo: si el usuario puso 3 destinos y la respuesta trae `delivery_order = [0, 2, 3, 1]`, la visita es origen → destino 2 → destino 3 → destino 1:
+
+```ts
+// destinos[k-1] es el destino con índice k
+// posición de visita (1, 2, 3...) de cada destino:
+const posicion: Record<number, number> = {};
+let n = 0;
+res.delivery_order.forEach((i) => { if (i !== 0) posicion[i] = ++n; });
+// marcador del destino k → etiqueta posicion[k]
+```
+
+Si `return_to_origin` es `true`, el último elemento de `delivery_order` es `0`: ya queda ignorado por el `if (i !== 0)`.
+
+### 3.7 Ejemplo real de respuesta
+
+Petición con 3 destinos (puntos de 3.8), `traffic_hour: 8`. Resultado de `backtracking`:
+
+```json
+{
+  "algorithm": "backtracking",
+  "execution_time_ms": 0.06,
+  "matrix_time_ms": 7.46,
+  "nodos_visitados": 8613,
+  "states_explored": 9,
+  "branches_pruned": 5,
+  "distancia_total_m": 8886.49,
+  "weighted_cost": 13401.35,
+  "delivery_order": [0, 2, 3, 1],
+  "is_optimal": true,
+  "path": [ { "lat": -12.1223648, "lon": -77.0290937 }, "... 350 puntos" ]
+}
+```
+
+Con `brute_force` el costo y el orden son idénticos (`states_explored: 6`, `branches_pruned: 0`). Con `divide_conquer` también coincide en este caso, pero `is_optimal` es `false`.
+
+Ruta directa (`/routes/calculate`, depósito → San Isidro, hora 8):
+`distancia_total_m: 4484.76`, `weighted_cost: 7118.80`, `path` de 210 puntos.
+
+### 3.8 Puntos de ejemplo (para el selector de ubicaciones)
+
+```ts
+export const LUGARES = [
+  { nombre: "Depósito Miraflores", lat: -12.1219, lon: -77.0297 },
+  { nombre: "Entrega San Isidro",  lat: -12.0925, lon: -77.0365 },
+  { nombre: "Entrega Reducto",     lat: -12.1328, lon: -77.0225 },
+  { nombre: "Entrega Larcomar",    lat: -12.1317, lon: -77.0307 },
+];
+```
+
+Con estos 4 puntos y `traffic_hour: 8` el resultado esperado es `delivery_order [0,2,3,1]` y `weighted_cost ≈ 13401.35`. Sirve para comprobar que el frontend está bien conectado.
+
+### 3.9 Cosas que el frontend debe saber
+
+- Cada coordenada se **ajusta al nodo vial más cercano**. El primer punto de `path` no coincide exactamente con el clic del usuario; es normal.
+- Si dos puntos caen en el mismo nodo vial (muy cercanos entre sí) la API responde **400**: *"Dos o más ubicaciones corresponden al mismo nodo vial."* Mostrar el mensaje.
+- Los costos son **dirigidos**: ir de A a B no cuesta lo mismo que de B a A (calles de un solo sentido).
+- El tráfico depende de la hora y del tipo de vía. La misma ruta cuesta más en hora punta (7–10 y 17–20) que de madrugada. Probar horas 3 y 8 con los mismos puntos: el `weighted_cost` cambia (`≈ 8007` vs `≈ 13401` con el ejemplo anterior), pero `distancia_total_m` puede cambiar si el algoritmo elige otro recorrido.
+- Tiempos de referencia: Dijkstra ≈ 2–3 ms; la matriz de 4 puntos ≈ 10 ms. Con 12 destinos en backtracking o 8 en fuerza bruta puede tardar más: mostrar el indicador de carga.
+
+### 3.10 Checklist de entrega del frontend
+
+- [ ] Mapa centrado en Miraflores/San Isidro con tiles de OSM.
+- [ ] Selección de origen y destinos (clic en mapa y lista de lugares).
+- [ ] Selector de modo, hora y algoritmo, con límite dinámico de destinos.
+- [ ] Checkbox "Volver al origen".
+- [ ] Botón "Calcular ruta" que dibuja la ruta y numera las paradas.
+- [ ] Panel de resultados con: tiempo del algoritmo, tiempo de matriz, estados explorados, ramas podadas, distancia (m), costo con tráfico, ¿óptimo?, orden de entrega.
+- [ ] Manejo de errores (400, 422, servidor caído) y estado de carga.
+- [ ] Botón "Comparar todos" con tabla de los 3 algoritmos.
+- [ ] Botón "Limpiar".
+
 ---
 
-## 10. Pendientes y mejoras conocidas
+## 4. Endpoints (resumen)
 
-- [ ] Re-guardar `requirements.txt` en UTF-8.
-- [ ] `core/config.py`, `schemas/grafo.py`, `pedido`, `repartidor`, `usuario` aún no se usan en los endpoints.
-- [ ] Agregar tests con `pytest` (fuerza bruta = backtracking; D&C ≥ óptimo).
+Base URL: `http://localhost:8000` · Detalle completo en [`BACKEND_DOCS.md`](./BACKEND_DOCS.md)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Mensaje de bienvenida |
+| GET | `/health` | `{"status": "ok"}` |
+| GET | `/routes/` | Algoritmos disponibles con sus límites |
+| POST | `/routes/calculate` | Ruta punto a punto (solo `dijkstra`) |
+| POST | `/routes/deliveries` | Orden óptimo de entregas (TSP) |
+
+**Errores**
+
+| Código | Cuándo |
+|---|---|
+| 400 | Excede el límite de entregas, dos puntos en el mismo nodo, algoritmo no válido en `/calculate`, no hay camino. `detail` es un texto en español |
+| 422 | Validación de campos (hora fuera de 0–23, `destinations` vacía o > 30, algoritmo inexistente). `detail` es una lista |
+| 500 | Error interno; el traceback queda en la consola del servidor |
+
+---
+
+## 5. Cómo funciona el tráfico
+
+`peso de arista = distancia_m × factor`. El factor depende de la hora y del tipo de vía:
+
+| Franja | Factor base |
+|---|---|
+| 07:00–09:59 y 17:00–19:59 | 2.5 |
+| 10:00–16:59 y 20:00–21:59 | 1.5 |
+| Resto | 1.0 |
+
+Sensibilidad por tipo de vía: `trunk`/`primary` 1.0, `secondary` 0.7, `tertiary` 0.5, resto 0.2.
+`factor_arista = 1 + (factor_base − 1) × sensibilidad`.
+
+---
+
+## 6. Estructura del proyecto
+
+```
+app/
+├── main.py                      # FastAPI, CORS, /, /health
+├── api/routes/route_routes.py   # Endpoints /routes/*
+├── schemas/route.py             # Modelos de request/response
+├── services/
+│   ├── route_service.py         # Ruta punto a punto + caché de grafo
+│   ├── delivery_service.py      # Orquesta el TSP
+│   └── cost_matrix_service.py   # Matriz de costos con Dijkstra
+├── algoritmos/
+│   ├── dijkstra.py
+│   ├── fuerza_bruta.py
+│   ├── backtracking.py
+│   └── divide_venceras.py
+├── graph/
+│   ├── graph_loader.py          # Carga el GraphML y filtra al componente conectado
+│   ├── graph_builder.py         # Pesos con tráfico y lista de adyacencia
+│   └── graph_utils.py           # Nodo más cercano, distancia de ruta
+└── data/graph/                  # miraflores_san_isidro.graphml + metadata
+scripts/                         # Verificaciones manuales de algoritmos
+tests/                           # pytest (algoritmos y API)
+```
+
+### Scripts de verificación
+
+```bash
+python -m scripts.verificar_dijkstra
+python -m scripts.verificar_matriz
+python -m scripts.verificar_equivalencia
+```
+
+---
+
+## 7. Pendientes
+
+- [ ] Frontend (sección 3).
 - [ ] Script de benchmark N = 4…12 para la tabla de tiempos del informe.
 - [ ] Ampliar CORS al dominio del frontend desplegado.
-- [ ] Futuro: UFDS (conectividad) y Held-Karp, no incluidos en este parcial.
+- [ ] UFDS y Held-Karp (siguiente entrega).
+
+---
+
+## 8. Equipo
+
+Proyecto del curso de Complejidad Algorítmica.
